@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+intel_images
+images
+saved_model
+test.py
+tmp
