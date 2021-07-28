@@ -48,19 +48,18 @@ test_data = DataGenerator.flow_from_directory(
 class buildModel(tf.keras.Model):
     def __init__(self):
         super(buildModel, self).__init__()
-        self.conv1 = layers.Conv2D(32, (3, 3), activation = 'relu', input_shape = img_shape + (3))
-        self.max_pool1 = layers.MaxPooling2D(2,2)
+        self.conv1 = layers.Conv2D(32, (3, 3), activation = 'relu', input_shape = (150, 150, 3))
+        self.max_pool = layers.MaxPooling2D(2,2)
         self.conv2 = layers.Conv2D(32, (3, 3), activation = 'relu')
-        self.max_pool2 = layers.MaxPooling2D(2,2)
         self.flatten = layers.Flatten()
         self.dense1 = layers.Dense(128, activation=tf.nn.relu)
         self.dense2 = layers.Dense(6, activation=tf.nn.softmax)
 
     def call(self, inputs):
         x = self.conv1(inputs)
-        x = self.max_pool1(x)
+        x = self.max_pool(x)
         x = self.conv2(x)
-        x = self.max_pool2(x)
+        x = self.max_pool(x)
         x = self.flatten(x)
         x = self.dense1(x)
         return self.dense2(x)
@@ -112,5 +111,6 @@ history = model.fit(train_data,
 
 model.save("saved_model")
 res = model.evaluate(test_data)
+
 print(res)
 
