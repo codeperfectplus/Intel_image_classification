@@ -3,6 +3,7 @@
 import os
 import numpy as np
 from tensorflow import keras
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 from flask import Flask, request, jsonify
 from pathlib import Path
 from werkzeug.utils import secure_filename
@@ -16,7 +17,7 @@ image_dir_path = os.path.join(root_dir, "images")
 if not os.path.isdir(image_dir_path):
     os.mkdir(image_dir_path)
 
-def get_labels():
+def get_labels() -> list:
     try:
         class_id_label = np.load("class_id_label.npy")
     except Exception:
@@ -26,12 +27,22 @@ def get_labels():
     return class_id_label
 
 
-def predict_class(img_path):
+def predict_class(img_path: str) -> str:
+    """
+    Predict the output class
+
+    args:
+        img_path:
+            str like image path for classification
+    
+    output:
+        output class
+     """
     class_id_label = get_labels()
     model = keras.models.load_model("tmp")
 
-    image = keras.preprocessing.image.load_img(img_path, color_mode="rgb", target_size=(150, 150))
-    input_arr = keras.preprocessing.image.img_to_array(image)
+    image = load_img(img_path, color_mode="rgb", target_size=(150, 150))
+    input_arr = img_to_array(image)
     input_arr = np.array([input_arr]) # converting single image to batch
 
     predictions = model.predict(input_arr)

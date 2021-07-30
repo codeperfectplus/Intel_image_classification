@@ -113,4 +113,3 @@ model.save("saved_model")
 res = model.evaluate(test_data)
 
 print(res)
-
