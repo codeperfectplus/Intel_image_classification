@@ -1,48 +1,104 @@
-""" Training script in Tensorflow """
-
+""" Training scrip(t in Tensorflow """
+import os
+import numpy as np
+import pandas as pd
+from PIL import Image
+from sklearn.utils import shuffle
+from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras.applications.vgg16 import preprocess_input
 
-img_shape = (150, 150)
+root_dir = os.path.dirname(os.path.abspath(os.path.abspath(__name__)))
+train_dir = os.path.join(root_dir, "intel_images/seg_train")
+test_dir = os.path.join(root_dir, "intel_images/seg_test")
+img_size = (150, 150)
+img_shape = (150, 150, 3)
+batch_size = 128
+num_classes = len(os.listdir(train_dir))
+idx_to_name = os.listdir(train_dir)
+name_to_idx = dict([(v, k) for k, v in enumerate(idx_to_name)])
 
-DataGenerator = tf.keras.preprocessing.image.ImageDataGenerator(
-    featurewise_center=False, samplewise_center=False,
-    featurewise_std_normalization=False, samplewise_std_normalization=False,
-    zca_whitening=False, zca_epsilon=1e-06, rotation_range=10, width_shift_range=0.1,
-    height_shift_range=0.1, brightness_range=None, shear_range=0.2, zoom_range=0.3,
-    channel_shift_range=0.0, fill_mode='nearest', cval=0.0,
-    horizontal_flip=True, vertical_flip=True, rescale=None,
-    preprocessing_function=None, validation_split=0.3, data_format=None, dtype=None
-)
+def data_to_df(data_dir, subset=None):
+    df = pd.DataFrame()
+    filenames = []
+    labels = []
+    
+    for dataset in os.listdir(data_dir):
+        img_list = os.listdir(os.path.join(data_dir, dataset))
+        label = name_to_idx[dataset]
+        
+        for image in img_list:
+            filenames.append(os.path.join(data_dir, dataset, image))
+            labels.append(label)
+        
+    df["filenames"] = filenames
+    df["labels"] = labels
+    
+    if subset == "train":
+        train_df, val_df = train_test_split(df, train_size=0.8, shuffle=True,
+                                            random_state=10)
+        return train_df, val_df
+    
+    return df
 
-train_data = DataGenerator.flow_from_directory(
-    "intel_images/seg_train",
-    target_size= img_shape,
-    color_mode="rgb",
-    class_mode="categorical",
-    batch_size=5,
-    shuffle=True,
-    subset="training"
-)
+train_df, val_df = data_to_df(train_dir, subset="train")
 
-val_data = DataGenerator.flow_from_directory(
-    "intel_images/seg_train",
-    target_size= img_shape,
-    color_mode="rgb",
-    class_mode="categorical",
-    batch_size=5,
-    shuffle=True,
-    subset="validation"
-)
+class CustomDataGenerator:
+    
+    def __init__(self, dataframe):
+        self.dataframe = dataframe 
+    
+    def load_samples(self):
+        data = self.dataframe[["filenames", "labels"]]
+        filenames = list(data["filenames"])
+        labels = list(data["labels"])
+        
+        samples = []
+        for name, label in zip(filenames, labels):
+            samples.append([name, label])
+        return samples
+        
+    def preprocessing(self, img, label):
+        img = np.resize(img, img_shape)
+        img = preprocess_input(img)
+        label = tf.keras.utils.to_categorical(label, num_classes)
+        
+        return img, label
 
-test_data = DataGenerator.flow_from_directory(
-    "intel_images/seg_test",
-    target_size=img_shape,
-    color_mode="rgb",
-    class_mode="categorical",
-    batch_size=5,
-    shuffle=True
-)
+    def generate(self, samples, batch_size=10, is_preprocessing=True):
+        while True:
+            samples = shuffle(samples)
+            
+            for offset in range(0, len(samples), batch_size):
+                batch_samples = samples[offset:offset+batch_size]
+                
+                X_train = []
+                y_train = []
+                    
+                for batch_sample in batch_samples:
+                    filename = batch_sample[0]
+                    label = batch_sample[1]
+                    
+                    img = np.asarray(Image.open(filename))
+                    if is_preprocessing:
+                        img, label = self.preprocessing(img, label)
+                    
+                    X_train.append(img)
+                    y_train.append(label)
+                
+                X_train, y_train = np.array(X_train), np.array(y_train)
+                
+                yield X_train, y_train
+
+train_gen = CustomDataGenerator(train_df)
+val_gen = CustomDataGenerator(val_df)
+
+train_samples = train_gen.load_samples()
+val_samples = val_gen.load_samples()
+
+train_data = train_gen.generate(train_samples)
+val_data = val_gen.generate(val_samples)
 
 
 class buildModel(tf.keras.Model):
@@ -66,7 +122,9 @@ class buildModel(tf.keras.Model):
 
 model = buildModel()
 
-model.compile(optimizer = 'adam', loss = tf.keras.losses.CategoricalCrossentropy()  , metrics=['accuracy'])
+model.compile(optimizer = 'adam', 
+              loss = tf.keras.losses.CategoricalCrossentropy(), 
+              metrics=['accuracy'])
 
 modelcheckpoint = tf.keras.callbacks.ModelCheckpoint(
     "tmp",
@@ -98,16 +156,25 @@ remote_monitor = tf.keras.callbacks.RemoteMonitor(
 
 csv_logger = tf.keras.callbacks.CSVLogger("log.csv", separator=",", append=False)
 
+callbacks = [modelcheckpoint, early_stopping, csv_logger, remote_monitor]
+
 try:
     model.load_weights("tmp")
 except Exception as e:
     print(e)
 
+x, y = next(train_data)
+
 history = model.fit(train_data,
-                    batch_size=128,
+                    batch_size=batch_size,
                     epochs=100,
+                    steps_per_epoch = len(train_samples)//batch_size,
                     validation_data=val_data,
-                    callbacks=[modelcheckpoint, early_stopping, csv_logger, remote_monitor])
+                    callbacks= callbacks)
+
+test_gen = CustomDataGenerator(test_dir)
+test_samples = test_gen.load_samples()
+test_data = test_gen.generate(test_samples, batch_size=128)
 
 model.save("saved_model")
 res = model.evaluate(test_data)
