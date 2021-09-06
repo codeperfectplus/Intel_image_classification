@@ -45,60 +45,71 @@ def data_to_df(data_dir, subset=None):
 train_df, val_df = data_to_df(train_dir, subset="train")
 
 class CustomDataGenerator:
+    ''' Custom DataGenerator to load img 
     
-    def __init__(self, dataframe):
-        self.dataframe = dataframe 
+    Arguments:
+        data_frame = pandas data frame in filenames and labels format
+        batch_size = divide data in batches
+        shuffle = shuffle data before loading
+        img_shape = image shape in (h, w, d) format
+        augmentation = data augmentation to make model rebust to overfitting
     
-    def load_samples(self):
-        data = self.dataframe[["filenames", "labels"]]
-        filenames = list(data["filenames"])
-        labels = list(data["labels"])
-        
-        samples = []
-        for name, label in zip(filenames, labels):
-            samples.append([name, label])
-        return samples
-        
-    def preprocessing(self, img, label):
-        img = np.resize(img, img_shape)
+    Output:
+        Img: numpy array of image
+        label : output label for image
+    '''
+    def __init__(self, data_frame, batch_size=10, shuffle_data=True, img_shape=None, augmentation=True):
+        self.data_frame = data_frame
+        self.train_len = self.data_frame.shape[0]
+        self.batch_size = batch_size
+        self.shuffle_data = shuffle_data
+        self.img_shape = img_shape
+    
+    def __len__(self):
+        return len(self.train_len/self.batch_size)
+
+    def preprocessing(self, filename, label):
+        """ converting filenames into numpy array and applying image preprocessing """
+        img = tf.keras.preprocessing.image.load_img(filename)
+        img = tf.keras.preprocessing.image.img_to_array(img)
+        img = np.resize(img, self.img_shape)
         img = preprocess_input(img)
-        label = tf.keras.utils.to_categorical(label, num_classes)
-        
+        img = tf.keras.preprocessing.image.random_shift(img, 0.2, 0.3)
         return img, label
 
-    def generate(self, samples, batch_size=10, is_preprocessing=True):
+    def generate(self):
+        ''' Generator function to yield img and label '''
+        num_samples = self.data_frame.shape[0]
         while True:
-            samples = shuffle(samples)
-            
-            for offset in range(0, len(samples), batch_size):
-                batch_samples = samples[offset:offset+batch_size]
-                
+            if self.shuffle_data:
+                self.data_frame = shuffle(self.data_frame)
+            filenames = self.data_frame["filenames"].tolist()
+            labels = self.data_frame["labels"].tolist()
+
+            for offset in range(0, num_samples, self.batch_size):
+                filenames = filenames[offset:offset+self.batch_size]
+                labels = labels[offset:offset+self.batch_size]
                 X_train = []
                 y_train = []
-                    
-                for batch_sample in batch_samples:
-                    filename = batch_sample[0]
-                    label = batch_sample[1]
-                    
-                    img = np.asarray(Image.open(filename))
-                    if is_preprocessing:
-                        img, label = self.preprocessing(img, label)
-                    
+
+                for filename, label in zip(filenames, labels):
+
+                    img, label = self.preprocessing(filename, label)
+
                     X_train.append(img)
                     y_train.append(label)
-                
-                X_train, y_train = np.array(X_train), np.array(y_train)
-                
+
+                X_train = np.array(X_train)
+                y_train = np.array(y_train)
+
                 yield X_train, y_train
 
-train_gen = CustomDataGenerator(train_df)
-val_gen = CustomDataGenerator(val_df)
-
-train_samples = train_gen.load_samples()
-val_samples = val_gen.load_samples()
-
-train_data = train_gen.generate(train_samples)
-val_data = val_gen.generate(val_samples)
+# creating train and validation data
+train_data = CustomDataGenerator(train_df, 
+                                 batch_size=batch_size, 
+                                 img_shape=img_shape).generate()
+val_data = CustomDataGenerator(val_df, 
+                               batch_size=10, img_shape=img_shape).generate()
 
 
 class buildModel(tf.keras.Model):
