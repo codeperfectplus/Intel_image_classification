@@ -17,6 +17,7 @@ image_dir_path = os.path.join(root_dir, "images")
 if not os.path.isdir(image_dir_path):
     os.mkdir(image_dir_path)
 
+
 def get_labels() -> list:
     try:
         class_id_label = np.load("class_id_label.npy")
