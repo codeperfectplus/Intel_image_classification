@@ -1,4 +1,4 @@
 Flask==2.0.1
-Keras==2.4.3
+Keras==2.13.1
 numpy==1.21.1
 tensorflow-gpu==2.5.1
